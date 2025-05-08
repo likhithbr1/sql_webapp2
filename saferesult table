@@ -1,0 +1,70 @@
+import React, { useState } from "react";
+
+export default function ResultAccordion({ dbResults, onTabChange }) {
+  const dbNames = Object.keys(dbResults || {});
+  const [activeTab, setActiveTab] = useState(dbNames[0] || "");
+
+  const handleTabClick = (dbName) => {
+    setActiveTab(dbName);
+    if (onTabChange) onTabChange(dbName);
+  };
+
+  if (!dbNames.length) {
+    return (
+      <div className="text-gray-500 text-sm">
+        No results available to display.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* DB Tabs */}
+      <div className="flex space-x-2 border-b mb-4">
+        {dbNames.map((db) => (
+          <button
+            key={db}
+            onClick={() => handleTabClick(db)}
+            className={`py-2 px-4 text-sm font-medium ${
+              activeTab === db
+                ? "text-blue-600 border-b-2 border-blue-600"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {db.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {/* Result Table */}
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        {Array.isArray(dbResults[activeTab]) && dbResults[activeTab].length > 0 ? (
+          <table className="min-w-full text-sm text-left text-gray-800">
+            <thead className="bg-gray-100 text-xs uppercase text-gray-600">
+              <tr>
+                {Object.keys(dbResults[activeTab][0]).map((col) => (
+                  <th key={col} className="px-4 py-3 whitespace-nowrap">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dbResults[activeTab].map((row, idx) => (
+                <tr key={idx} className="border-t">
+                  {Object.keys(row).map((col) => (
+                    <td key={col} className="px-4 py-2 whitespace-nowrap">
+                      {row[col]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="p-4 text-gray-500 text-sm">No rows found for {activeTab}.</div>
+        )}
+      </div>
+    </div>
+  );
+}
