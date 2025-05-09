@@ -215,3 +215,65 @@ def plot_charts_from_config(df: pd.DataFrame, chart_config: Dict[str, Any]) -> L
 
     figs.append(fig)
     return figs
+
+
+
+
+
+
+
+
+
+
+
+
+prompt = f"""
+You are a data visualization assistant helping unify result sets from multiple databases.
+
+The user question is:
+{question}
+
+Below are result columns returned from each database (not SQL):
+
+{description_section}
+
+Your tasks:
+1. Understand the semantic meaning of each column in each DB.
+2. Suggest the most appropriate chart type for the user question and the available columns.
+3. If each database returns a **single aggregated value** (like COUNT or SUM), suggest a **pie** or **donut** chart. In this case:
+   - Use `"labels"` as the database name (e.g., `"eon"`, `"swift"`).
+   - Use `"values"` as the actual aggregate column (e.g., `"total_orders"`).
+   - Example:
+     {{
+       "chart_type": "pie",
+       "labels": {{
+         "standard": "database"
+       }},
+       "values": {{
+         "standard": "total_orders",
+         "eon": "total_orders",
+         "swift": "COUNT(*)",
+         "pipeline": "COUNT(order_id)"
+       }}
+     }}
+4. If the results have **multiple rows per database** (like per-product, per-date), suggest a **bar**, **line**, or **scatter** chart:
+   - Provide `x_axis` and `y_axis` mappings for each DB.
+   - Example:
+     {{
+       "chart_type": "bar",
+       "x_axis": {{
+         "standard": "product",
+         "eon": "product_name",
+         "swift": "item"
+       }},
+       "y_axis": {{
+         "standard": "total_sales",
+         "eon": "order_qty",
+         "swift": "units_sold"
+       }},
+       "group_by": "database"
+     }}
+5. Do **not** use database names (like `"eon"` or `"swift"`) as column names. Use `"database"` as a virtual label only if needed.
+6. Always return your response in a valid JSON format matching one of the above examples.
+"""
+
