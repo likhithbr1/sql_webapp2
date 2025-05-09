@@ -567,3 +567,26 @@ def normalize_and_merge_results(all_results: List[Dict[str, Any]], chart_mapping
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+
+
+PROMPT_TEMPLATE = """
+You are a database assistant. Only provide the MongoDB aggregation pipeline without any explanations or extra text.
+
+### Task
+Generate a MongoDB aggregation pipeline to answer the following question:
+{question}
+
+### Database Schema
+The query will run on a MongoDB database with the following collections and fields:
+{schema}
+
+### Guidelines
+1. Return a valid MongoDB aggregation pipeline (array of stages) using proper MongoDB syntax.
+2. Use `$match`, `$group`, `$project`, `$sort`, `$lookup`, `$unwind`, etc., as needed.
+3. If dates or numeric comparisons are involved, use MongoDB operators (e.g., `$gte`, `$lt`).
+4. Do not use SQL-like syntax. Avoid explanations or text before/after the pipeline.
+
+### MongoDB Aggregation Pipeline
+```json
+"""
+
