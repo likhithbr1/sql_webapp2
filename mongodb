@@ -1,0 +1,141 @@
+import os
+import json
+import re
+import requests
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, OperationFailure
+
+# --- Configuration ---
+DB_NAME = "sample_eon"
+DB_URI = "mongodb+srv://Athaluri:Thenika@cluster0.d5a4upt.mongodb.net/sample_eon?retryWrites=true&w=majority"
+GEMINI_API_KEY = ""  # Put your Gemini API Key here
+GEMINI_MODEL = "gemini-1.5-flash-latest"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+
+# --- MongoDB Connection ---
+def connect_db(uri, db_name):
+    try:
+        client = MongoClient(uri)
+        client.admin.command('ismaster')
+        print("✅ Connected to MongoDB.")
+        return client[db_name]
+    except Exception as e:
+        print(f"❌ MongoDB connection error: {e}")
+        return None
+
+# --- Schema Extraction ---
+def get_db_schema(db):
+    schema_info = {}
+    if db is None:
+        print("❌ Cannot fetch schema, DB is None.")
+        return json.dumps(schema_info)
+    try:
+        for collection_name in db.list_collection_names():
+            if collection_name.startswith("system."):
+                continue
+            sample_doc = db[collection_name].find_one()
+            if sample_doc:
+                schema_info[collection_name] = {k: type(v).__name__ for k, v in sample_doc.items()}
+            else:
+                schema_info[collection_name] = "No documents found"
+    except Exception as e:
+        print(f"❌ Error fetching schema: {e}")
+    return json.dumps(schema_info, indent=2)
+
+# --- Gemini API ---
+def generate_mongo_query_with_gemini(schema_str, user_question):
+    if not GEMINI_API_KEY:
+        print("❌ GEMINI_API_KEY not set.")
+        return None
+
+    prompt = f"""You are an expert MongoDB aggregation query generator.
+Based on the following database schema and the user's question, generate a JSON object with the format:
+
+{{
+  "collection": "<main_collection_name>",
+  "pipeline": [ <valid MongoDB aggregation pipeline steps> ]
+}}
+
+- Use $lookup for joins if needed.
+- Use $match, $project, $group, etc. where relevant.
+- Return ONLY the JSON object (no markdown or explanations).
+
+Schema:
+{schema_str}
+
+User Question:
+{user_question}
+
+JSON Output:
+"""
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.2, "topP": 0.8, "topK": 40}
+    }
+
+    try:
+        response = requests.post(GEMINI_URL, headers={"Content-Type": "application/json"}, json=payload, timeout=60)
+        response.raise_for_status()
+        response_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+        match = re.search(r"{[\s\S]*}", response_text)
+        json_str = match.group(0) if match else response_text.strip()
+        return json.loads(json_str)
+
+    except Exception as e:
+        print(f"❌ Gemini API error: {e}")
+        return None
+
+# --- Execute Aggregation ---
+def execute_aggregation_query(db, collection_name, pipeline):
+    try:
+        print(f"\n▶️ Running aggregation on `{collection_name}`...")
+        return list(db[collection_name].aggregate(pipeline))
+    except Exception as e:
+        print(f"❌ Error executing aggregation: {e}")
+        return []
+
+# --- Main CLI Chatbot ---
+def main():
+    print("🔍 Welcome to MongoDB Natural Language Aggregation Chatbot")
+
+    if not GEMINI_API_KEY:
+        print("❌ Please set your GEMINI_API_KEY in the script.")
+        return
+
+    db = connect_db(DB_URI, DB_NAME)
+    if not db:
+        return
+
+    schema_json_str = get_db_schema(db)
+    print("\n📘 Database Schema:")
+    print(schema_json_str)
+
+    while True:
+        user_question = input("\n🗨️ Ask a database question (or type 'exit'): \n> ").strip()
+        if user_question.lower() == 'exit':
+            print("👋 Exiting chatbot.")
+            break
+        if not user_question:
+            continue
+
+        query_obj = generate_mongo_query_with_gemini(schema_json_str, user_question)
+        if not query_obj or "collection" not in query_obj or "pipeline" not in query_obj:
+            print("❌ Invalid or incomplete response from Gemini.")
+            continue
+
+        collection_name = query_obj["collection"]
+        pipeline = query_obj["pipeline"]
+
+        results = execute_aggregation_query(db, collection_name, pipeline)
+        if results:
+            print(f"\n✅ Found {len(results)} result(s):")
+            for i, doc in enumerate(results, 1):
+                print(f"\n--- Document {i} ---")
+                print(json.dumps(doc, indent=2, default=str))
+        else:
+            print("\n⚠️ No results or query error.")
+
+if __name__ == "__main__":
+    main()
