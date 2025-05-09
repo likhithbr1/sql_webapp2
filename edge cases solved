@@ -343,3 +343,39 @@ def normalize_and_merge_results(all_results: List[Dict[str, Any]], chart_mapping
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+if chart_type in {"pie", "donut"}:
+    label_map = chart_mapping.get("labels", {}).get(db_key)
+    value_map = chart_mapping.get("values", {}).get(db_key)
+
+    if label_std == "database":
+        df[label_std] = db_key
+    elif not label_map or label_map not in df.columns:
+        continue
+    else:
+        df = df.rename(columns={label_map: label_std})
+
+    if not value_map or value_map not in df.columns:
+        df[value_std] = 1
+    else:
+        df = df.rename(columns={value_map: value_std})
+
+    # Only include "database" if not already the label column
+    if label_std == "database":
+        frames.append(df[[label_std, value_std]])
+    else:
+        df["database"] = db_key
+        frames.append(df[[label_std, value_std, "database"]])
+
+
