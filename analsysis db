@@ -135,3 +135,65 @@ INSERT INTO platform_b_products VALUES
 ('B138','ASUS Gaming Monitor','ASUS 165Hz 24” Gaming Monitor','Monitors',239.00,'Platform B','US',26,3800.00,'2025-03-30',13,'ORD20138','2025-03-28','CB138',0.23),
 ('B139','LG UltraFine','5K Retina Monitor, USB-C, 27”','Monitors',1299.00,'Platform B','US',10,8993.00,'2025-03-22',5,'ORD20139','2025-03-19','CB139',0.25),
 ('B140','TP-Link AX3000','Archer AX50 WiFi 6 dual-band router','Networking',149.99,'Platform B','US',52,4290.00,'2025-03-24',27,'ORD20140','2025-03-22','CB140',0.20);
+
+
+
+
+
+
+# Step 1: Standalone script to compare products from two CSV files using sentence embeddings
+
+import os
+import pandas as pd
+from sentence_transformers import SentenceTransformer, util
+
+# ---- CONFIGURATION ----
+FOLDER_PATH = "./product_data"  # Hardcoded folder path
+SIMILARITY_THRESHOLD = 0.85     # Similarity threshold for matching
+MODEL_NAME = "all-MiniLM-L6-v2" # Embedding model
+
+# ---- LOAD FILES ----
+csv_files = [f for f in os.listdir(FOLDER_PATH) if f.endswith(".csv")]
+if len(csv_files) != 2:
+    raise ValueError("Folder must contain exactly two CSV files.")
+
+file_a, file_b = csv_files
+df_a = pd.read_csv(os.path.join(FOLDER_PATH, file_a))
+df_b = pd.read_csv(os.path.join(FOLDER_PATH, file_b))
+
+# ---- TEXT COMBINATION ----
+df_a["text"] = df_a["product_name"].fillna("") + " " + df_a["description"].fillna("")
+df_b["text"] = df_b["product_name"].fillna("") + " " + df_b["description"].fillna("")
+
+# ---- EMBEDDING GENERATION ----
+model = SentenceTransformer(MODEL_NAME)
+embeddings_a = model.encode(df_a["text"].tolist(), convert_to_tensor=True)
+embeddings_b = model.encode(df_b["text"].tolist(), convert_to_tensor=True)
+
+# ---- SIMILARITY CALCULATION ----
+similarity_matrix = util.pytorch_cos_sim(embeddings_a, embeddings_b)
+
+# ---- EXTRACT MATCHES ----
+matches = []
+for i in range(len(df_a)):
+    for j in range(len(df_b)):
+        score = similarity_matrix[i][j].item()
+        if score >= SIMILARITY_THRESHOLD:
+            matches.append({
+                "product_id_A": df_a.iloc[i]["product_id"],
+                "product_name_A": df_a.iloc[i]["product_name"],
+                "product_id_B": df_b.iloc[j]["product_id"],
+                "product_name_B": df_b.iloc[j]["product_name"],
+                "similarity_score": round(score, 3)
+            })
+
+# ---- PRINT RESULTS ----
+if matches:
+    print(f"\n✅ Found {len(matches)} similar product pairs:\n")
+    for match in matches:
+        print(f"{match['product_id_A']} | {match['product_name_A']}  ↔  "
+              f"{match['product_id_B']} | {match['product_name_B']}  | "
+              f"Similarity: {match['similarity_score']}")
+else:
+    print("❌ No similar products found above the threshold.")
+
