@@ -1,0 +1,99 @@
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+
+# Load your dataset
+df = pd.read_excel('sales_data.xlsx')  # Replace with your actual file path
+df['date'] = pd.to_datetime(df['date'], format='%m/%d/%Y')
+
+# Initialize a list to store features
+features = []
+
+# Extract features for each product
+for product in df['product'].unique():
+    product_data = df[df['product'] == product].copy()
+    product_data = product_data.sort_values('date')
+    product_data['day_index'] = (product_data['date'] - product_data['date'].min()).dt.days
+    X = product_data[['day_index']]
+    y = product_data['total_orders']
+    
+    # Linear regression for trend
+    model = LinearRegression()
+    model.fit(X, y)
+    slope = model.coef_[0]
+    
+    # Total sales
+    total_sales = y.sum()
+    
+    # Average monthly sales
+    product_data['month'] = product_data['date'].dt.to_period('M')
+    avg_monthly_sales = product_data.groupby('month')['total_orders'].sum().mean()
+    
+    # Sales volatility
+    sales_volatility = y.std()
+    
+    # Zero sales days percentage
+    zero_sales_days_pct = (y == 0).sum() / len(y)
+    
+    # Recent sales average (last 90 days)
+    recent_period = product_data['date'].max() - pd.Timedelta(days=90)
+    recent_sales_avg = product_data[product_data['date'] >= recent_period]['total_orders'].mean()
+    
+    # Sales acceleration
+    mid_point = product_data['date'].min() + (product_data['date'].max() - product_data['date'].min()) / 2
+    first_half_avg = product_data[product_data['date'] <= mid_point]['total_orders'].mean()
+    second_half_avg = product_data[product_data['date'] > mid_point]['total_orders'].mean()
+    sales_acceleration = second_half_avg - first_half_avg
+    
+    features.append({
+        'product': product,
+        'slope': slope,
+        'total_sales': total_sales,
+        'avg_monthly_sales': avg_monthly_sales,
+        'sales_volatility': sales_volatility,
+        'zero_sales_days_pct': zero_sales_days_pct,
+        'recent_sales_avg': recent_sales_avg,
+        'sales_acceleration': sales_acceleration
+    })
+
+# Create a DataFrame from the features
+features_df = pd.DataFrame(features)
+
+# Prepare data for clustering
+X_features = features_df.drop('product', axis=1)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X_features)
+
+# Determine the optimal number of clusters using the Elbow Method
+wcss = []
+for i in range(1, 10):
+    kmeans = KMeans(n_clusters=i, random_state=42)
+    kmeans.fit(X_scaled)
+    wcss.append(kmeans.inertia_)
+
+# Plot the Elbow Method graph
+plt.figure(figsize=(8, 4))
+plt.plot(range(1, 10), wcss, marker='o')
+plt.title('Elbow Method')
+plt.xlabel('Number of clusters')
+plt.ylabel('WCSS')
+plt.show()
+
+# Apply K-Means clustering
+kmeans = KMeans(n_clusters=3, random_state=42)
+features_df['cluster'] = kmeans.fit_predict(X_scaled)
+
+# Map cluster labels to categories (this may require manual adjustment based on cluster characteristics)
+# For example, you might analyze the average slope or total_sales in each cluster to assign labels
+cluster_mapping = {
+    0: 'growing',
+    1: 'decaying',
+    2: 'obsolete'
+}
+features_df['category'] = features_df['cluster'].map(cluster_mapping)
+
+# Display the clustered products
+print(features_df[['product', 'category']])
