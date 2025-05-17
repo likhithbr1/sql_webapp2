@@ -4,9 +4,9 @@ from gemini_client import call_gemini  # used for summarization prompt
 
 # ------------------ DATABASE MAPPING ------------------
 DATABASES = {
-    "eon": "data/eon.csv",
-    "retail": "data/retail.csv",
-    "telecom": "data/telecom.csv"
+    "eon": "data/eon.xlsx",
+    "retail": "data/retail.xlsx",
+    "telecom": "data/telecom.xlsx"
 }
 
 # ------------------ TOOL 1: list_databases ------------------
@@ -29,11 +29,11 @@ def validate_database(db_name: str) -> dict:
 
 # ------------------ TOOL 3: load_product_list ------------------
 def load_product_list(db_name: str) -> list:
-    """Loads all unique product names from the CSV mapped to the given DB."""
+    """Loads all unique product names from the Excel file mapped to the given DB."""
     if db_name not in DATABASES:
         raise ValueError(f"Invalid DB: {db_name}")
 
-    df = pd.read_csv(DATABASES[db_name])
+    df = pd.read_excel(DATABASES[db_name])
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 
     return sorted(df["product"].dropna().astype(str).str.strip().unique())
@@ -59,13 +59,13 @@ def get_monthly_sales(db_name: str, product_name: str) -> dict:
     if db_name not in DATABASES:
         raise ValueError(f"Invalid DB: {db_name}")
     
-    df = pd.read_csv(DATABASES[db_name])
+    df = pd.read_excel(DATABASES[db_name])
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 
     if not all(col in df.columns for col in ["product", "date", "total_orders"]):
         raise ValueError("Missing one or more required columns.")
 
-    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["date"])
 
     df_filtered = df[df["product"].str.lower().str.strip() == product_name.lower().strip()]
@@ -99,3 +99,4 @@ Then explain your reasoning in 2–3 sentences.
 """.strip()
 
     return call_gemini(prompt)
+
