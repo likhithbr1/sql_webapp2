@@ -7,88 +7,87 @@ import streamlit as st
 import plotly.graph_objects as go
 
 # Load file
-file_path = "sales.xlsx"  # Adjust this path for Streamlit Cloud
+file_path = "sales.xlsx"
 df = pd.read_excel(file_path)
 
 # Clean columns
 df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 df.rename(columns={"product": "product_name"}, inplace=True)
-df["date"] = pd.to_datetime(df["date"], format="%d-%m-%Y")
+df["date"] = pd.to_datetime(df["date"])
+
+# Aggregate daily sales into monthly totals
+df["month"] = df["date"].dt.to_period("M")
+monthly_df = df.groupby(["product_name", "month"]).agg({"total_orders": "sum"}).reset_index()
+monthly_df["month"] = monthly_df["month"].dt.to_timestamp()
 
 # Initialize
-trend_results = {}
-results = []
+trend_results = []
+plot_data_map = {}
 
 # Process each product
-for product in df["product_name"].unique():
-    product_data = df[df["product_name"] == product].copy().sort_values("date")
-    product_data['sales_ma'] = product_data['total_orders'].rolling(window=30, min_periods=1).mean()
-    product_data['day_index'] = (product_data['date'] - product_data['date'].min()).dt.days
-    X = product_data[['day_index']]
-    y = product_data['sales_ma']
+for product in monthly_df["product_name"].unique():
+    product_data = monthly_df[monthly_df["product_name"] == product].copy().sort_values("month")
+    product_data["month_index"] = (product_data["month"] - product_data["month"].min()).dt.days
+
+    X = product_data[["month_index"]]
+    y = product_data["total_orders"]
 
     model = LinearRegression()
     model.fit(X, y)
     slope = model.coef_[0]
     r2 = r2_score(y, model.predict(X))
 
-    # Recent activity window
-    end_date = product_data['date'].max()
-    recent_start_date = end_date - timedelta(days=90)
-    recent_data = product_data[product_data['date'] >= recent_start_date]
-    recent_avg = recent_data['total_orders'].mean() if not recent_data.empty else 0
-    zero_sales_pct = (recent_data['total_orders'] == 0).sum() / len(recent_data) if not recent_data.empty else 1.0
+    # Recent activity window (last 3 months)
+    end_date = product_data["month"].max()
+    recent_start_date = end_date - pd.DateOffset(months=3)
+    recent_data = product_data[product_data["month"] >= recent_start_date]
+    recent_avg = recent_data["total_orders"].mean() if not recent_data.empty else 0
+    zero_sales_pct = (recent_data["total_orders"] == 0).sum() / len(recent_data) if not recent_data.empty else 1.0
 
-    # Classification
-    if slope > 0.05 and r2 > 0.3:
+    # Classification (monthly-level thresholds)
+    if slope > 5 and r2 > 0.3:
         category = "Growing"
-    elif slope < -0.05 and r2 > 0.3:
+    elif slope < -5 and r2 > 0.3:
         category = "Decaying"
-    elif -0.05 <= slope <= 0.05 and r2 < 0.3 and recent_avg >= 1:
+    elif -5 <= slope <= 5 and r2 < 0.3 and recent_avg >= 1:
         category = "Flat"
     elif recent_avg < 1 or zero_sales_pct > 0.5:
         category = "Obsolete"
     else:
         category = "Unclassified"
 
-    # Save results
-    results.append({
+    # Store results
+    trend_results.append({
         "product": product,
         "slope": round(slope, 4),
         "r_squared": round(r2, 4),
         "recent_avg_sales": round(recent_avg, 2),
-        "zero_sales_pct_last_90d": round(zero_sales_pct, 2),
+        "zero_sales_pct_last_3m": round(zero_sales_pct, 2),
         "category": category
     })
-
-    trend_results[product] = {
-        "df": product_data,
-        "category": category
-    }
+    plot_data_map[product] = {"df": product_data, "category": category}
 
 # UI
-st.title("📈 Trend and Growth Classification")
+st.title("📈 Monthly Sales Trend Classification")
 
-# Display trend summary table
-results_df = pd.DataFrame(results)
+results_df = pd.DataFrame(trend_results)
 st.dataframe(results_df)
 
-# Select product to view chart
 selected_product = st.selectbox("Select a product to view its trend", results_df["product"])
 
-# Plot
 if selected_product:
-    data = trend_results[selected_product]["df"]
-    category = trend_results[selected_product]["category"]
+    product_info = plot_data_map[selected_product]
+    chart_df = product_info["df"]
+    category = product_info["category"]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=data["date"], y=data["total_orders"], mode='lines', name='Daily Sales', line=dict(color='lightgray')))
-    fig.add_trace(go.Scatter(x=data["date"], y=data["sales_ma"], mode='lines', name='30-day MA', line=dict(color='blue')))
+    fig.add_trace(go.Bar(x=chart_df["month"], y=chart_df["total_orders"], name="Monthly Sales", marker_color="blue"))
     fig.update_layout(
         title=f"{selected_product} – Classified as: {category}",
-        xaxis_title="Date",
-        yaxis_title="Sales",
+        xaxis_title="Month",
+        yaxis_title="Total Orders",
         template="plotly_white",
         height=450
     )
     st.plotly_chart(fig, use_container_width=True)
+
